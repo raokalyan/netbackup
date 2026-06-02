@@ -1,0 +1,2 @@
+# Run nightly at 1:30 AM. Edit /path/to/atrisDev/netbackup for your server.
+30 1 * * * /path/to/atrisDev/netbackup/scripts/run_backup.sh >> /path/to/atrisDev/netbackup/logs/netbackup.log 2>&1

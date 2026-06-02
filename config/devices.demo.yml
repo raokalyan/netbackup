@@ -1,0 +1,11 @@
+# Local-only demo inventory.
+# This does not connect to any real network device.
+# It generates a small fake config so you can test the backup flow.
+devices:
+  - name: demo-router-01
+    host: 127.0.0.1
+    vendor: dummy
+    method: dummy
+    hostname: demo-router-01
+    site: local-lab
+    interface: loopback0

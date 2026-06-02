@@ -1,0 +1,14 @@
+devices:
+  - name: firewall-01
+    host: 192.0.2.10
+    vendor: panos
+    method: api
+    api_key_env: PANOS_API_KEY
+    verify_ssl: false
+
+  - name: switch-01
+    host: 192.0.2.20
+    vendor: generic
+    method: placeholder
+    username_env: SSH_USERNAME
+    password_env: SSH_PASSWORD

@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+netbackup.db
+logs/*.log
+backups/**
+!backups/.gitkeep
+!logs/.gitkeep
+config/devices.yml
