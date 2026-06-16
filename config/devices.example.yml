@@ -6,16 +6,22 @@ devices:
     api_key_env: PANORAMA_API_KEY
     verify_ssl: false
     timeout: 30
-    commands:
-      - system-info
-      - panorama-status
-      - connected-devices
-      - managed-devices
-      - device-groups
-      - templates
-      - template-stacks
-      - plugins
-      # Custom Panorama/PAN-OS operational command XML:
+    # Leave commands unset to save a restore-loadable running-config XML file
+    # using the PAN-OS export API: type=export&category=configuration.
+    # You can also explicitly request that restore file with:
+    # commands:
+    #   - export-config
+    # If you want an audit bundle instead, uncomment commands below.
+    # commands:
+    #   - system-info
+    #   - panorama-status
+    #   - connected-devices
+    #   - managed-devices
+    #   - device-groups
+    #   - templates
+    #   - template-stacks
+    #   - plugins
+    # Custom Panorama/PAN-OS operational command XML:
       # - name: commit-jobs
       #   type: op
       #   cmd: "<show><jobs><all></all></jobs></show>"

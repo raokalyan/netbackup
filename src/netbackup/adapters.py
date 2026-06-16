@@ -37,6 +37,7 @@ PANORAMA_COMMAND_ALIASES: dict[str, dict[str, str]] = {
         "xpath": "/config/devices/entry[@name='localhost.localdomain']/plugins",
     },
     "full-config": {"type": "config", "action": "show"},
+    "export-config": {"type": "export", "category": "configuration"},
 }
 
 def fetch_config(device: Device) -> str:
@@ -52,19 +53,29 @@ def fetch_panos_config(device: Device) -> str:
     commands = device.options.get("commands")
     if commands:
         return fetch_panos_commands(device, commands)
-    return panos_api_request(device, {"type": "config", "action": "show"})
+    return fetch_panos_exported_config(device)
+
+def fetch_panos_exported_config(device: Device) -> str:
+    return panos_api_request(device, {"type": "export", "category": "configuration"})
 
 def fetch_panos_commands(device: Device, commands: Any) -> str:
     if not isinstance(commands, list):
         raise BackupError(f"commands must be a list for {device.name}")
 
+    normalized_commands = [normalize_panos_command(raw_command) for raw_command in commands]
+    if len(normalized_commands) == 1 and is_panos_export_config_request(normalized_commands[0]):
+        command = {k: v for k, v in normalized_commands[0].items() if k != "name"}
+        return panos_api_request(device, command)
+
     outputs: list[str] = []
-    for raw_command in commands:
-        command = normalize_panos_command(raw_command)
+    for command in normalized_commands:
         label = command.pop("name")
         response_text = panos_api_request(device, command)
         outputs.append(f"===== {label} =====\n{response_text.strip()}\n")
     return "\n".join(outputs)
+
+def is_panos_export_config_request(command: dict[str, str]) -> bool:
+    return command.get("type") == "export" and command.get("category") == "configuration"
 
 def normalize_panos_command(raw_command: Any) -> dict[str, str]:
     if isinstance(raw_command, str):

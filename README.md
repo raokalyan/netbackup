@@ -45,15 +45,29 @@ devices:
     method: api
     api_key_env: PANORAMA_API_KEY
     verify_ssl: false
-    commands:
-      - system-info
-      - panorama-status
-      - connected-devices
-      - managed-devices
-      - device-groups
-      - templates
-      - template-stacks
-      - plugins
+    # Leave commands unset to save a restore-loadable running-config XML file
+    # using the PAN-OS export API: type=export&category=configuration.
+```
+
+With no `commands` list, the adapter saves a true Panorama/PAN-OS exported configuration file as `.xml`, equivalent to exporting `running-config.xml` for later import/load. You can also explicitly request the same restore file with:
+
+```yaml
+commands:
+  - export-config
+```
+
+If you want a human-readable audit bundle instead of a restore file, add command aliases:
+
+```yaml
+commands:
+  - system-info
+  - panorama-status
+  - connected-devices
+  - managed-devices
+  - device-groups
+  - templates
+  - template-stacks
+  - plugins
 ```
 
 Supported built-in Panorama command aliases:
@@ -66,6 +80,7 @@ Supported built-in Panorama command aliases:
 - `template-stacks`
 - `plugins`
 - `full-config`
+- `export-config`
 
 You can also add custom PAN-OS API commands:
 
@@ -80,7 +95,7 @@ commands:
     xpath: "/config/shared/address"
 ```
 
-If no `commands` list is provided, the adapter defaults to a full configuration export using `type=config&action=show`.
+If no `commands` list is provided, the adapter defaults to the restore-loadable export API request: `type=export&category=configuration`.
 
 ## Security notes
 - Do not commit real passwords or API keys.
