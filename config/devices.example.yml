@@ -1,6 +1,32 @@
 devices:
-  - name: firewall-01
+  - name: panorama-01
     host: 192.0.2.10
+    vendor: panorama
+    method: api
+    api_key_env: PANORAMA_API_KEY
+    verify_ssl: false
+    timeout: 30
+    commands:
+      - system-info
+      - panorama-status
+      - connected-devices
+      - managed-devices
+      - device-groups
+      - templates
+      - template-stacks
+      - plugins
+      # Custom Panorama/PAN-OS operational command XML:
+      # - name: commit-jobs
+      #   type: op
+      #   cmd: "<show><jobs><all></all></jobs></show>"
+      # Custom Panorama config xpath:
+      # - name: shared-addresses
+      #   type: config
+      #   action: show
+      #   xpath: "/config/shared/address"
+
+  - name: firewall-01
+    host: 192.0.2.11
     vendor: panos
     method: api
     api_key_env: PANOS_API_KEY

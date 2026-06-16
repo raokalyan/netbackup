@@ -33,6 +33,55 @@ PYTHONPATH=src python3 -m netbackup.backup --inventory config/devices.demo.yml
 
 This creates a timestamped config file under `backups/demo-router-01/` with a simple fake network config, including a `hostname` line.
 
+## Panorama / PAN-OS backups
+
+For Panorama, use `vendor: panorama` with `method: api` in `config/devices.yml`. Put your API key in an environment variable or `.env`; do not place the key directly in YAML.
+
+```yaml
+devices:
+  - name: panorama-01
+    host: panorama.example.internal
+    vendor: panorama
+    method: api
+    api_key_env: PANORAMA_API_KEY
+    verify_ssl: false
+    commands:
+      - system-info
+      - panorama-status
+      - connected-devices
+      - managed-devices
+      - device-groups
+      - templates
+      - template-stacks
+      - plugins
+```
+
+Supported built-in Panorama command aliases:
+- `system-info`
+- `panorama-status`
+- `connected-devices`
+- `managed-devices`
+- `device-groups`
+- `templates`
+- `template-stacks`
+- `plugins`
+- `full-config`
+
+You can also add custom PAN-OS API commands:
+
+```yaml
+commands:
+  - name: commit-jobs
+    type: op
+    cmd: "<show><jobs><all></all></jobs></show>"
+  - name: shared-addresses
+    type: config
+    action: show
+    xpath: "/config/shared/address"
+```
+
+If no `commands` list is provided, the adapter defaults to a full configuration export using `type=config&action=show`.
+
 ## Security notes
 - Do not commit real passwords or API keys.
 - Store secrets in `.env` and reference environment variable names in inventory.
