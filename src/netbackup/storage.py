@@ -35,3 +35,9 @@ def latest_runs(limit: int = 100) -> list[dict]:
     with connect() as conn:
         rows = conn.execute("SELECT * FROM backup_runs ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
     return [dict(row) for row in rows]
+
+
+def get_run(run_id: int) -> dict | None:
+    with connect() as conn:
+        row = conn.execute("SELECT * FROM backup_runs WHERE id = ?", (run_id,)).fetchone()
+    return dict(row) if row else None

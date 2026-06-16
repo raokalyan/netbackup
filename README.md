@@ -20,6 +20,8 @@ cp .env.example .env
 cp config/devices.example.yml config/devices.yml
 PYTHONPATH=src python -m netbackup.backup --inventory config/devices.yml
 PYTHONPATH=src uvicorn netbackup.web:app --host 127.0.0.1 --port 8000
+# Optional: override the web UI inventory path
+# NETBACKUP_INVENTORY=config/devices.yml PYTHONPATH=src uvicorn netbackup.web:app --host 127.0.0.1 --port 8000
 ```
 
 ## Local dummy demo

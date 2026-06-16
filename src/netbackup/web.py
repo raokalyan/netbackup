@@ -1,27 +1,54 @@
 from __future__ import annotations
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from pathlib import Path
 from html import escape
 from urllib.parse import quote
 from .backup import run_backup
-from .storage import latest_runs
+from .settings import BACKUP_DIR
+import os
+from .storage import get_run, latest_runs
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 WIKI_PATH = BASE_DIR / "docs" / "wiki.md"
-DEMO_INVENTORY_PATH = BASE_DIR / "config" / "devices.demo.yml"
 DEFAULT_INVENTORY_PATH = BASE_DIR / "config" / "devices.yml"
+EXAMPLE_INVENTORY_PATH = BASE_DIR / "config" / "devices.example.yml"
 
 app = FastAPI(title="NetBackup", version="0.1.0")
 
 def _inventory_path() -> Path:
-    return DEMO_INVENTORY_PATH if DEMO_INVENTORY_PATH.exists() else DEFAULT_INVENTORY_PATH
+    configured = os.getenv("NETBACKUP_INVENTORY")
+    if configured:
+        return Path(configured).expanduser()
+    if DEFAULT_INVENTORY_PATH.exists():
+        return DEFAULT_INVENTORY_PATH
+    return EXAMPLE_INVENTORY_PATH
+
+
+def _backup_links(row: dict) -> str:
+    backup_path = row.get("backup_path")
+    if row.get("status") != "success" or not backup_path:
+        return escape(backup_path or "")
+    run_id = row["id"]
+    path_text = escape(backup_path)
+    return (
+        f"{path_text}<br>"
+        f"<a href=\"/runs/{run_id}/config\">View</a> "
+        f"<a href=\"/runs/{run_id}/config?download=1\">Download</a>"
+    )
+
+
+def _media_type(path: Path) -> str:
+    if path.suffix.lower() == ".xml":
+        return "application/xml"
+    return "text/plain"
+
 
 @app.get("/")
 def index(message: str | None = None) -> HTMLResponse:
     rows = latest_runs(50)
     table_rows = "".join(
-        f"<tr><td>{escape(r['created_at'])}</td><td>{escape(r['device_name'])}</td><td>{escape(r['host'])}</td><td>{escape(r['vendor'])}</td><td><b>{escape(r['status'])}</b></td><td>{escape(r.get('backup_path') or '')}</td><td>{escape(r.get('message') or '')}</td></tr>"
+        f"<tr><td>{escape(r['created_at'])}</td><td>{escape(r['device_name'])}</td><td>{escape(r['host'])}</td><td>{escape(r['vendor'])}</td><td><b>{escape(r['status'])}</b></td><td>{_backup_links(r)}</td><td>{escape(r.get('message') or '')}</td></tr>"
         for r in rows
     ) or "<tr><td colspan='7' class='empty'>No backup runs yet. Click Backup Now to create one.</td></tr>"
     banner = f"<div class='banner'>{escape(message)}</div>" if message else ""
@@ -78,6 +105,24 @@ def backup_now() -> RedirectResponse:
 def api_runs(limit: int = 100) -> list[dict]:
     return latest_runs(limit)
 
+
+@app.get("/runs/{run_id}/config")
+def view_config(run_id: int, download: bool = False) -> FileResponse:
+    run = get_run(run_id)
+    if not run or run.get("status") != "success" or not run.get("backup_path"):
+        raise HTTPException(status_code=404, detail="Backup config not found")
+
+    path = Path(run["backup_path"]).resolve()
+    backup_root = BACKUP_DIR.resolve()
+    if not path.is_file() or backup_root not in path.parents:
+        raise HTTPException(status_code=404, detail="Backup config not found")
+
+    return FileResponse(
+        path,
+        media_type=_media_type(path),
+        filename=path.name,
+        content_disposition_type="attachment" if download else "inline",
+    )
 
 
 def _render_wiki_markdown(markdown: str) -> str:
