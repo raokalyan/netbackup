@@ -3,6 +3,7 @@ import os
 from typing import Any
 from xml.etree import ElementTree
 from .inventory import Device
+from .settings import device_env_name, resolve_device_secret
 
 class BackupError(RuntimeError):
     pass
@@ -116,10 +117,14 @@ def panos_api_request(device: Device, params: dict[str, str]) -> str:
     except ImportError as exc:
         raise BackupError("The panos API adapter requires the 'requests' package. Run: pip install -r requirements.txt") from exc
 
-    api_key_env = device.options.get("api_key_env")
-    api_key = os.getenv(api_key_env or "")
+    api_key = resolve_device_secret(device.name, "api_key", device.options.get("api_key_env"))
     if not api_key:
-        raise BackupError(f"Missing API key environment variable: {api_key_env}")
+        api_key_env = device.options.get("api_key_env")
+        expected = f"{device_env_name(device.name, 'api_key')} (or NETBACKUP_DEFAULT_API_KEY)"
+        raise BackupError(
+            f"Missing API key for {device.name}. "
+            f"Set {api_key_env or expected} environment variable."
+        )
     verify_ssl = bool(device.options.get("verify_ssl", True))
     url = f"https://{device.host}/api/"
     response = requests.get(
@@ -162,4 +167,13 @@ def dummy_config(device: Device) -> str:
 
 
 def placeholder_config(device: Device) -> str:
-    return f"# Placeholder backup for {device.name} ({device.host})\n# Add a real adapter for vendor={device.vendor}.\n"
+    username = resolve_device_secret(device.name, "username", device.options.get("username_env"))
+    password_set = resolve_device_secret(device.name, "password", device.options.get("password_env")) is not None
+    username_env = device.options.get("username_env") or device_env_name(device.name, "username")
+    password_env = device.options.get("password_env") or device_env_name(device.name, "password")
+    return (
+        f"# Placeholder backup for {device.name} ({device.host})\n"
+        f"# Add a real adapter for vendor={device.vendor}.\n"
+        f"# Username env: {username_env} = {username or '(not set)'}\n"
+        f"# Password env: {password_env} (set: {password_set})\n"
+    )

@@ -3,7 +3,9 @@ devices:
     host: 192.0.2.10
     vendor: panorama
     method: api
-    api_key_env: PANORAMA_API_KEY
+    # The code looks up PANORAMA_01_API_KEY by convention because the device
+    # name is "panorama-01". You can also override with an explicit env name:
+    # api_key_env: PANORAMA_01_API_KEY
     verify_ssl: false
     timeout: 30
     # Leave commands unset to save a restore-loadable running-config XML file
@@ -35,12 +37,14 @@ devices:
     host: 192.0.2.11
     vendor: panos
     method: api
-    api_key_env: PANOS_API_KEY
+    # Matches FIREWALL_01_API_KEY from .env by convention.
+    # api_key_env: FIREWALL_01_API_KEY
     verify_ssl: false
 
   - name: switch-01
     host: 192.0.2.20
     vendor: generic
     method: placeholder
-    username_env: SSH_USERNAME
-    password_env: SSH_PASSWORD
+    # Matches SWITCH_01_USERNAME and SWITCH_01_PASSWORD from .env by convention.
+    # username_env: SWITCH_01_USERNAME
+    # password_env: SWITCH_01_PASSWORD

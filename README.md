@@ -104,6 +104,24 @@ If no `commands` list is provided, the adapter defaults to the restore-loadable 
 - Store secrets in `.env` and reference environment variable names in inventory.
 - Bind the UI to localhost/VPN or put it behind authenticated Nginx.
 
+## Environment variable naming convention
+
+NetBackup supports per-device secrets with an automatic naming convention, so you can add many devices without env var name collisions.
+
+Convention: `<DEVICE_NAME>_<SECRET_TYPE>` in uppercase, where non-alphanumeric characters in the device name become underscores.
+
+Examples:
+- Device `panorama-01` -> `PANORAMA_01_API_KEY`
+- Device `firewall-01` -> `FIREWALL_01_API_KEY`
+- Device `switch-01` -> `SWITCH_01_USERNAME`, `SWITCH_01_PASSWORD`
+
+The lookup order in the code is:
+1. The explicit env var named in the inventory (e.g., `api_key_env: FIREWALL_01_API_KEY`).
+2. The auto-generated conventional env var.
+3. The global fallback env vars `NETBACKUP_DEFAULT_API_KEY`, `NETBACKUP_DEFAULT_USERNAME`, `NETBACKUP_DEFAULT_PASSWORD`.
+
+This lets you scale to a large fleet by keeping secrets in `.env` and only referencing device names in `config/devices.yml`.
+
 ## Web UI
 - `/` shows the latest backup runs.
 - `/wiki` shows the internal NetBackup wiki and project directory guide.
