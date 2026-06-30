@@ -4,10 +4,13 @@ Internal network device configuration backup project.
 
 ## Features
 - Read device inventory from `config/devices.yml`
-- Pull config backups through vendor adapters
+- Pull config backups through vendor adapters (PAN-OS API, SSH/CLI via netmiko)
 - Save timestamped snapshots under `backups/`
 - Track backup status in SQLite
-- Provide an internal FastAPI web UI/API
+- Provide an internal FastAPI web UI/API with optional HTTP Basic auth
+- Run backups in the background from the web UI
+- Apply 30-day retention for backup files and database history
+- Write structured logs to `logs/netbackup.log`
 - Run from cron or systemd timer on Ubuntu
 
 ## Quick start
@@ -102,7 +105,53 @@ If no `commands` list is provided, the adapter defaults to the restore-loadable 
 ## Security notes
 - Do not commit real passwords or API keys.
 - Store secrets in `.env` and reference environment variable names in inventory.
+- Set `NETBACKUP_WEB_USERNAME` and `NETBACKUP_WEB_PASSWORD` before exposing the UI beyond localhost.
 - Bind the UI to localhost/VPN or put it behind authenticated Nginx.
+
+## SSH / CLI backups
+
+For Cisco, Juniper, Arista, and similar devices, use `method: ssh`:
+
+```yaml
+devices:
+  - name: switch-01
+    host: 192.0.2.20
+    vendor: cisco
+    method: ssh
+    device_type: cisco_ios
+    commands:
+      - show running-config
+```
+
+Credentials resolve from `SWITCH_01_USERNAME` / `SWITCH_01_PASSWORD` by convention, or from explicit `username_env` / `password_env` inventory fields.
+
+Supported vendor defaults:
+- `cisco` / `cisco_ios` → `cisco_ios`, `show running-config`
+- `cisco_nxos` → `show running-config`
+- `juniper` / `junos` → `show configuration | display set`
+- `arista` → `show running-config`
+
+## Retention
+
+Backups and SQLite run history older than 30 days are deleted automatically at the end of each backup run. Override with:
+
+```bash
+NETBACKUP_RETENTION_DAYS=30
+```
+
+## Logging
+
+Runtime logs are written to `logs/netbackup.log` (override with `NETBACKUP_LOG_FILE`). Backup successes, failures, retention cleanup, and web UI events are recorded there.
+
+## Web UI authentication
+
+When both `NETBACKUP_WEB_USERNAME` and `NETBACKUP_WEB_PASSWORD` are set, all web routes require HTTP Basic authentication.
+
+- `/` shows the latest backup runs and job status.
+- `/wiki` shows the internal NetBackup wiki and project directory guide.
+- `/api/runs` returns recent backup runs as JSON.
+- `/api/job` returns the current background backup job status.
+- `POST /backup-now` starts a background backup job (does not block the browser).
 
 ## Environment variable naming convention
 
@@ -122,7 +171,10 @@ The lookup order in the code is:
 
 This lets you scale to a large fleet by keeping secrets in `.env` and only referencing device names in `config/devices.yml`.
 
-## Web UI
-- `/` shows the latest backup runs.
-- `/wiki` shows the internal NetBackup wiki and project directory guide.
-- `/api/runs` returns recent backup runs as JSON.
+## Development
+
+```bash
+pip install -r requirements.txt
+pip install -e ".[dev]"
+pytest
+```

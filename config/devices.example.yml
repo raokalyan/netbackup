@@ -43,8 +43,13 @@ devices:
 
   - name: switch-01
     host: 192.0.2.20
-    vendor: generic
-    method: placeholder
+    vendor: cisco
+    method: ssh
+    device_type: cisco_ios
     # Matches SWITCH_01_USERNAME and SWITCH_01_PASSWORD from .env by convention.
     # username_env: SWITCH_01_USERNAME
     # password_env: SWITCH_01_PASSWORD
+    # Optional enable mode secret for Cisco devices:
+    # enable_password_env: SWITCH_01_ENABLE_PASSWORD
+    commands:
+      - show running-config

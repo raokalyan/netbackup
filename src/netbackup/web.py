@@ -1,20 +1,40 @@
 from __future__ import annotations
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
-from pathlib import Path
-from html import escape
-from urllib.parse import quote
-from .backup import run_backup
-from .settings import BACKUP_DIR
+
 import os
+from html import escape
+from pathlib import Path
+from urllib.parse import quote
+
+from fastapi import Depends, FastAPI, HTTPException
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+
+from .auth import require_web_auth
+from .jobs import get_job_state, start_backup_job
+from .logging_setup import setup_logging
+from .paths import resolve_backup_file
+from .settings import BACKUP_DIR, RETENTION_DAYS, WEB_AUTH_ENABLED
 from .storage import get_run, latest_runs
+
+logger = setup_logging()
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 WIKI_PATH = BASE_DIR / "docs" / "wiki.md"
 DEFAULT_INVENTORY_PATH = BASE_DIR / "config" / "devices.yml"
 EXAMPLE_INVENTORY_PATH = BASE_DIR / "config" / "devices.example.yml"
 
-app = FastAPI(title="NetBackup", version="0.1.0")
+app = FastAPI(title="NetBackup", version="0.2.0")
+
+
+@app.on_event("startup")
+def on_startup() -> None:
+    if WEB_AUTH_ENABLED:
+        logger.info("Web UI authentication enabled")
+    else:
+        logger.warning(
+            "Web UI authentication is disabled. Set NETBACKUP_WEB_USERNAME and "
+            "NETBACKUP_WEB_PASSWORD to protect the dashboard."
+        )
+
 
 def _inventory_path() -> Path:
     configured = os.getenv("NETBACKUP_INVENTORY")
@@ -33,8 +53,8 @@ def _backup_links(row: dict) -> str:
     path_text = escape(backup_path)
     return (
         f"{path_text}<br>"
-        f"<a href=\"/runs/{run_id}/config\">View</a> "
-        f"<a href=\"/runs/{run_id}/config?download=1\">Download</a>"
+        f'<a href="/runs/{run_id}/config">View</a> '
+        f'<a href="/runs/{run_id}/config?download=1">Download</a>'
     )
 
 
@@ -44,15 +64,35 @@ def _media_type(path: Path) -> str:
     return "text/plain"
 
 
-@app.get("/")
+def _job_status_html() -> str:
+    job = get_job_state()
+    if job.status == "idle":
+        return ""
+    return (
+        f"<div class='job-status'>Backup job: <b>{escape(job.status)}</b>"
+        f"{f' — {escape(job.message)}' if job.message else ''}"
+        f"{f' (started {escape(job.started_at)})' if job.started_at else ''}"
+        f"</div>"
+    )
+
+
+@app.get("/", dependencies=[Depends(require_web_auth)])
 def index(message: str | None = None) -> HTMLResponse:
     rows = latest_runs(50)
     table_rows = "".join(
-        f"<tr><td>{escape(r['created_at'])}</td><td>{escape(r['device_name'])}</td><td>{escape(r['host'])}</td><td>{escape(r['vendor'])}</td><td><b>{escape(r['status'])}</b></td><td>{_backup_links(r)}</td><td>{escape(r.get('message') or '')}</td></tr>"
+        f"<tr><td>{escape(r['created_at'])}</td><td>{escape(r['device_name'])}</td>"
+        f"<td>{escape(r['host'])}</td><td>{escape(r['vendor'])}</td>"
+        f"<td><b>{escape(r['status'])}</b></td><td>{_backup_links(r)}</td>"
+        f"<td>{escape(r.get('message') or '')}</td></tr>"
         for r in rows
     ) or "<tr><td colspan='7' class='empty'>No backup runs yet. Click Backup Now to create one.</td></tr>"
     banner = f"<div class='banner'>{escape(message)}</div>" if message else ""
     inventory = escape(str(_inventory_path().relative_to(BASE_DIR)))
+    auth_note = (
+        "<div class='muted'>Authentication: enabled</div>"
+        if WEB_AUTH_ENABLED
+        else "<div class='muted warn'>Authentication: disabled (set NETBACKUP_WEB_USERNAME/PASSWORD)</div>"
+    )
     html = f"""
     <html><head><title>NetBackup</title>
       <style>
@@ -66,24 +106,29 @@ def index(message: str | None = None) -> HTMLResponse:
         .linkbtn {{ background: #ffffff22; color: white; border: 1px solid #ffffff55; }}
         .card {{ margin-top: 22px; background: white; border-radius: 18px; padding: 22px; box-shadow: 0 10px 24px #64748b22; }}
         .banner {{ margin-top: 18px; background: #dcfce7; color: #14532d; padding: 12px 14px; border-radius: 12px; font-weight: 700; }}
+        .job-status {{ margin-top: 18px; background: #dbeafe; color: #1e3a8a; padding: 12px 14px; border-radius: 12px; }}
         table {{ width: 100%; border-collapse: collapse; font-size: 14px; }}
         th {{ text-align: left; background: #eef2ff; color: #3730a3; }}
         th, td {{ padding: 10px 12px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }}
         .empty {{ text-align: center; color: #64748b; padding: 28px; }}
         .muted {{ color: #dbeafe; font-size: 13px; margin-top: 8px; }}
+        .warn {{ color: #fde68a; }}
       </style>
     </head>
     <body><div class="wrap">
       <section class="hero">
         <h1>NetBackup</h1>
-        <p>Local demo dashboard for simple network config backups.</p>
+        <p>Internal dashboard for network config backups.</p>
         <div class="actions">
-          <form action="/backup-now" method="post"><button type="submit">⚡ Backup Now</button></form>
+          <form action="/backup-now" method="post"><button type="submit">Backup Now</button></form>
           <a class="linkbtn" href="/wiki">Open Internal Wiki</a>
         </div>
         <div class="muted">Inventory: {inventory}</div>
+        <div class="muted">Retention: {RETENTION_DAYS} days</div>
+        {auth_note}
       </section>
       {banner}
+      {_job_status_html()}
       <section class="card">
         <h2>Latest backup runs</h2>
         <table>
@@ -95,27 +140,47 @@ def index(message: str | None = None) -> HTMLResponse:
     """
     return HTMLResponse(html)
 
-@app.post("/backup-now")
+
+@app.post("/backup-now", dependencies=[Depends(require_web_auth)])
 def backup_now() -> RedirectResponse:
-    code = run_backup(str(_inventory_path()))
-    message = "Backup completed" if code == 0 else "Backup finished with errors"
+    inventory = str(_inventory_path())
+    job = start_backup_job(inventory)
+    if job.status == "busy":
+        message = job.message or "A backup is already running"
+    else:
+        message = "Backup started in the background"
+    logger.info("Backup requested from web UI: %s", message)
     return RedirectResponse(f"/?message={quote(message)}", status_code=303)
 
-@app.get("/api/runs")
+
+@app.get("/api/runs", dependencies=[Depends(require_web_auth)])
 def api_runs(limit: int = 100) -> list[dict]:
     return latest_runs(limit)
 
 
-@app.get("/runs/{run_id}/config")
+@app.get("/api/job", dependencies=[Depends(require_web_auth)])
+def api_job() -> dict:
+    job = get_job_state()
+    return {
+        "status": job.status,
+        "started_at": job.started_at,
+        "finished_at": job.finished_at,
+        "exit_code": job.exit_code,
+        "message": job.message,
+        "inventory_path": job.inventory_path,
+    }
+
+
+@app.get("/runs/{run_id}/config", dependencies=[Depends(require_web_auth)])
 def view_config(run_id: int, download: bool = False) -> FileResponse:
     run = get_run(run_id)
     if not run or run.get("status") != "success" or not run.get("backup_path"):
         raise HTTPException(status_code=404, detail="Backup config not found")
 
-    path = Path(run["backup_path"]).resolve()
-    backup_root = BACKUP_DIR.resolve()
-    if not path.is_file() or backup_root not in path.parents:
-        raise HTTPException(status_code=404, detail="Backup config not found")
+    try:
+        path = resolve_backup_file(run["backup_path"])
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Backup config not found") from None
 
     return FileResponse(
         path,
@@ -190,7 +255,7 @@ def _render_wiki_markdown(markdown: str) -> str:
     return "\n".join(html_parts)
 
 
-@app.get("/wiki")
+@app.get("/wiki", dependencies=[Depends(require_web_auth)])
 def wiki() -> HTMLResponse:
     if WIKI_PATH.exists():
         body = _render_wiki_markdown(WIKI_PATH.read_text(encoding="utf-8"))

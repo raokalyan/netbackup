@@ -37,6 +37,13 @@ def latest_runs(limit: int = 100) -> list[dict]:
     return [dict(row) for row in rows]
 
 
+def purge_runs_older_than(cutoff: datetime) -> int:
+    cutoff_iso = cutoff.isoformat()
+    with connect() as conn:
+        cursor = conn.execute("DELETE FROM backup_runs WHERE created_at < ?", (cutoff_iso,))
+        return cursor.rowcount
+
+
 def get_run(run_id: int) -> dict | None:
     with connect() as conn:
         row = conn.execute("SELECT * FROM backup_runs WHERE id = ?", (run_id,)).fetchone()

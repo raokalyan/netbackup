@@ -8,6 +8,11 @@ BASE_DIR = Path(__file__).resolve().parents[2]
 DB_PATH = Path(os.getenv("NETBACKUP_DB", BASE_DIR / "netbackup.db"))
 BACKUP_DIR = Path(os.getenv("NETBACKUP_BACKUP_DIR", BASE_DIR / "backups"))
 LOG_FILE = Path(os.getenv("NETBACKUP_LOG_FILE", BASE_DIR / "logs" / "netbackup.log"))
+RETENTION_DAYS = int(os.getenv("NETBACKUP_RETENTION_DAYS", "30"))
+
+WEB_USERNAME = os.getenv("NETBACKUP_WEB_USERNAME")
+WEB_PASSWORD = os.getenv("NETBACKUP_WEB_PASSWORD")
+WEB_AUTH_ENABLED = bool(WEB_USERNAME and WEB_PASSWORD)
 
 # Fallback credentials used when a device-specific env var is not set.
 DEFAULT_API_KEY = os.getenv("NETBACKUP_DEFAULT_API_KEY")

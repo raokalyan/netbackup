@@ -1,9 +1,14 @@
 from __future__ import annotations
+
 import os
 from typing import Any
 from xml.etree import ElementTree
+
 from .inventory import Device
+from .logging_setup import setup_logging
 from .settings import device_env_name, resolve_device_secret
+
+logger = setup_logging()
 
 class BackupError(RuntimeError):
     pass
@@ -41,9 +46,22 @@ PANORAMA_COMMAND_ALIASES: dict[str, dict[str, str]] = {
     "export-config": {"type": "export", "category": "configuration"},
 }
 
+SSH_VENDOR_DEFAULTS: dict[str, dict[str, Any]] = {
+    "cisco": {"device_type": "cisco_ios", "commands": ["show running-config"]},
+    "cisco_ios": {"device_type": "cisco_ios", "commands": ["show running-config"]},
+    "cisco_nxos": {"device_type": "cisco_nxos", "commands": ["show running-config"]},
+    "juniper": {"device_type": "juniper_junos", "commands": ["show configuration | display set"]},
+    "junos": {"device_type": "juniper_junos", "commands": ["show configuration | display set"]},
+    "arista": {"device_type": "arista_eos", "commands": ["show running-config"]},
+    "generic": {"device_type": "autodetect", "commands": ["show running-config"]},
+}
+
+
 def fetch_config(device: Device) -> str:
     if device.vendor.lower() in {"panos", "panorama"} and device.method.lower() == "api":
         return fetch_panos_config(device)
+    if device.method.lower() == "ssh":
+        return fetch_ssh_config(device)
     if device.method.lower() == "dummy":
         return dummy_config(device)
     if device.method.lower() == "placeholder":
@@ -70,8 +88,9 @@ def fetch_panos_commands(device: Device, commands: Any) -> str:
 
     outputs: list[str] = []
     for command in normalized_commands:
-        label = command.pop("name")
-        response_text = panos_api_request(device, command)
+        label = command.get("name", "custom-command")
+        params = {key: value for key, value in command.items() if key != "name"}
+        response_text = panos_api_request(device, params)
         outputs.append(f"===== {label} =====\n{response_text.strip()}\n")
     return "\n".join(outputs)
 
@@ -127,6 +146,7 @@ def panos_api_request(device: Device, params: dict[str, str]) -> str:
         )
     verify_ssl = bool(device.options.get("verify_ssl", True))
     url = f"https://{device.host}/api/"
+    logger.info("PAN-OS API request for %s (%s)", device.name, params.get("type", "unknown"))
     response = requests.get(
         url,
         params={**params, "key": api_key},
@@ -147,6 +167,62 @@ def raise_for_panos_api_error(response_text: str) -> None:
     message = root.findtext("./msg/line") or root.findtext("./msg") or response_text
     code = root.attrib.get("code", "unknown")
     raise BackupError(f"PAN-OS API error {code}: {message}")
+
+
+def fetch_ssh_config(device: Device) -> str:
+    try:
+        from netmiko import ConnectHandler
+    except ImportError as exc:
+        raise BackupError(
+            "The ssh adapter requires the 'netmiko' package. Run: pip install -r requirements.txt"
+        ) from exc
+
+    username = resolve_device_secret(device.name, "username", device.options.get("username_env"))
+    password = resolve_device_secret(device.name, "password", device.options.get("password_env"))
+    if not username or not password:
+        username_env = device.options.get("username_env") or device_env_name(device.name, "username")
+        password_env = device.options.get("password_env") or device_env_name(device.name, "password")
+        raise BackupError(
+            f"Missing SSH credentials for {device.name}. "
+            f"Set {username_env} and {password_env} (or NETBACKUP_DEFAULT_USERNAME/PASSWORD)."
+        )
+
+    vendor_key = device.vendor.lower()
+    vendor_defaults = SSH_VENDOR_DEFAULTS.get(vendor_key, SSH_VENDOR_DEFAULTS["generic"])
+    device_type = str(device.options.get("device_type") or vendor_defaults["device_type"])
+    commands = device.options.get("commands") or vendor_defaults["commands"]
+    if not isinstance(commands, list) or not commands:
+        raise BackupError(f"commands must be a non-empty list for SSH device {device.name}")
+
+    connect_args: dict[str, Any] = {
+        "device_type": device_type,
+        "host": device.host,
+        "username": username,
+        "password": password,
+        "port": int(device.options.get("port", 22)),
+        "timeout": int(device.options.get("timeout", 30)),
+        "conn_timeout": int(device.options.get("conn_timeout", 30)),
+    }
+
+    enable_secret = resolve_device_secret(
+        device.name,
+        "enable_password",
+        device.options.get("enable_password_env"),
+    )
+    if enable_secret:
+        connect_args["secret"] = enable_secret
+
+    logger.info("SSH backup starting for %s (%s via %s)", device.name, device.host, device_type)
+    outputs: list[str] = []
+    with ConnectHandler(**connect_args) as connection:
+        for command in commands:
+            read_timeout = int(device.options.get("read_timeout", 120))
+            output = connection.send_command(str(command), read_timeout=read_timeout)
+            outputs.append(f"===== {command} =====\n{output.strip()}\n")
+
+    logger.info("SSH backup completed for %s (%s command(s))", device.name, len(commands))
+    return "\n".join(outputs)
+
 
 def dummy_config(device: Device) -> str:
     hostname = device.options.get("hostname", device.name)
