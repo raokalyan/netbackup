@@ -143,6 +143,43 @@ NETBACKUP_RETENTION_DAYS=30
 
 Runtime logs are written to `logs/netbackup.log` (override with `NETBACKUP_LOG_FILE`). Backup successes, failures, retention cleanup, and web UI events are recorded there.
 
+## Scheduled backups (cron / systemd)
+
+Use `scripts/run_backup.sh` for automation. It loads `.env`, activates `.venv` when present, and skips overlapping runs with `--skip-if-busy`.
+
+### Cron (testing every 5 minutes)
+
+```bash
+crontab -e
+```
+
+Paste the contents of `scripts/cron.example`, replacing `/path/to/netbackup` with your real install path:
+
+```cron
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+*/5 * * * * /path/to/netbackup/scripts/run_backup.sh >> /path/to/netbackup/logs/cron.log 2>&1
+```
+
+Cron schedule times use the **server's local timezone**. Check `logs/cron.log` and `logs/netbackup.log` if jobs do not appear.
+
+Switch back to nightly production by commenting out the `*/5` line and enabling `30 1 * * *` in `scripts/cron.example`.
+
+### systemd (testing every 5 minutes)
+
+```bash
+sudo cp systemd/netbackup-backup.service /etc/systemd/system/
+sudo cp systemd/netbackup-backup-testing.timer /etc/systemd/system/
+# Edit paths in the service file first
+sudo systemctl daemon-reload
+sudo systemctl enable --now netbackup-backup-testing.timer
+systemctl list-timers | grep netbackup
+```
+
+## Timestamps and timezone
+
+Backup run times are stored in UTC. The web UI converts them using `NETBACKUP_TIMEZONE` from `.env` (for example `America/Los_Angeles`). Backup filenames under `backups/` continue to use UTC so retention stays consistent across servers.
+
 ## Web UI authentication
 
 When both `NETBACKUP_WEB_USERNAME` and `NETBACKUP_WEB_PASSWORD` are set, all web routes require HTTP Basic authentication.

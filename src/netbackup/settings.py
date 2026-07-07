@@ -1,14 +1,26 @@
 from __future__ import annotations
 import os
+from datetime import datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
+
 from dotenv import load_dotenv
 
 load_dotenv()
+
+
+def _resolve_display_timezone() -> ZoneInfo | timezone:
+    configured = os.getenv("NETBACKUP_TIMEZONE")
+    if configured:
+        return ZoneInfo(configured)
+    local_tz = datetime.now().astimezone().tzinfo
+    return local_tz or timezone.utc
 BASE_DIR = Path(__file__).resolve().parents[2]
 DB_PATH = Path(os.getenv("NETBACKUP_DB", BASE_DIR / "netbackup.db"))
 BACKUP_DIR = Path(os.getenv("NETBACKUP_BACKUP_DIR", BASE_DIR / "backups"))
 LOG_FILE = Path(os.getenv("NETBACKUP_LOG_FILE", BASE_DIR / "logs" / "netbackup.log"))
 RETENTION_DAYS = int(os.getenv("NETBACKUP_RETENTION_DAYS", "30"))
+DISPLAY_TIMEZONE = _resolve_display_timezone()
 
 WEB_USERNAME = os.getenv("NETBACKUP_WEB_USERNAME")
 WEB_PASSWORD = os.getenv("NETBACKUP_WEB_PASSWORD")

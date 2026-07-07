@@ -1,2 +1,18 @@
-# Run nightly at 1:30 AM. Edit /path/to/atrisDev/netbackup for your server.
-30 1 * * * /path/to/atrisDev/netbackup/scripts/run_backup.sh >> /path/to/atrisDev/netbackup/logs/netbackup.log 2>&1
+# NetBackup cron example
+#
+# Install:
+#   1. Replace /path/to/netbackup below with your real install path.
+#   2. crontab -e
+#   3. Paste the active schedule block.
+#
+# Cron uses the server's local timezone for schedule times.
+# Backup run timestamps in the web UI use NETBACKUP_TIMEZONE from .env.
+
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Testing: every 5 minutes
+*/5 * * * * /path/to/netbackup/scripts/run_backup.sh >> /path/to/netbackup/logs/cron.log 2>&1
+
+# Production: nightly at 1:30 AM server local time (disable the */5 line first)
+# 30 1 * * * /path/to/netbackup/scripts/run_backup.sh >> /path/to/netbackup/logs/cron.log 2>&1

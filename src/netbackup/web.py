@@ -12,8 +12,9 @@ from .auth import require_web_auth
 from .jobs import get_job_state, start_backup_job
 from .logging_setup import setup_logging
 from .paths import resolve_backup_file
-from .settings import BACKUP_DIR, RETENTION_DAYS, WEB_AUTH_ENABLED
+from .settings import BACKUP_DIR, DISPLAY_TIMEZONE, RETENTION_DAYS, WEB_AUTH_ENABLED
 from .storage import get_run, latest_runs
+from .timefmt import format_display_timestamp
 
 logger = setup_logging()
 
@@ -71,7 +72,7 @@ def _job_status_html() -> str:
     return (
         f"<div class='job-status'>Backup job: <b>{escape(job.status)}</b>"
         f"{f' — {escape(job.message)}' if job.message else ''}"
-        f"{f' (started {escape(job.started_at)})' if job.started_at else ''}"
+        f"{f' (started {escape(format_display_timestamp(job.started_at))})' if job.started_at else ''}"
         f"</div>"
     )
 
@@ -80,7 +81,7 @@ def _job_status_html() -> str:
 def index(message: str | None = None) -> HTMLResponse:
     rows = latest_runs(50)
     table_rows = "".join(
-        f"<tr><td>{escape(r['created_at'])}</td><td>{escape(r['device_name'])}</td>"
+        f"<tr><td>{escape(format_display_timestamp(r['created_at']))}</td><td>{escape(r['device_name'])}</td>"
         f"<td>{escape(r['host'])}</td><td>{escape(r['vendor'])}</td>"
         f"<td><b>{escape(r['status'])}</b></td><td>{_backup_links(r)}</td>"
         f"<td>{escape(r.get('message') or '')}</td></tr>"
@@ -125,6 +126,7 @@ def index(message: str | None = None) -> HTMLResponse:
         </div>
         <div class="muted">Inventory: {inventory}</div>
         <div class="muted">Retention: {RETENTION_DAYS} days</div>
+        <div class="muted">Display timezone: {escape(str(DISPLAY_TIMEZONE))}</div>
         {auth_note}
       </section>
       {banner}

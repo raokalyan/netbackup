@@ -58,14 +58,15 @@ Stores documentation intended for users and maintainers. This wiki file lives at
 ### scripts/
 Operational helper scripts.
 
-- `run_backup.sh`: runs the backup process.
-- `cron.example`: sample cron schedule for automated backups.
+- `run_backup.sh`: runs the backup process (loads `.env`, uses `--skip-if-busy` for cron).
+- `cron.example`: sample cron schedule. The active example runs every 5 minutes for testing.
 
 ### systemd/
 Ubuntu systemd automation examples.
 
 - `netbackup-backup.service`: one backup execution.
-- `netbackup-backup.timer`: schedule for automatic recurring backups.
+- `netbackup-backup.timer`: nightly production schedule.
+- `netbackup-backup-testing.timer`: every 5 minutes for testing.
 
 Systemd timers are often preferred over cron because they provide better status and logging through `systemctl` and `journalctl`.
 

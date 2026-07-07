@@ -102,7 +102,18 @@ def run_backup(inventory_path: str, *, skip_if_busy: bool = False) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run network device config backups")
     parser.add_argument("--inventory", default="config/devices.yml", help="Path to devices YAML inventory")
+    parser.add_argument(
+        "--skip-if-busy",
+        action="store_true",
+        help="Exit successfully when another backup is already running",
+    )
     args = parser.parse_args()
+    if args.skip_if_busy:
+        try:
+            return run_backup(args.inventory, skip_if_busy=True)
+        except BackupBusyError:
+            logger.info("Backup skipped: another run is already in progress")
+            return 0
     return run_backup(args.inventory)
 
 

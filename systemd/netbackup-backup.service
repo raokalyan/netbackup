@@ -3,5 +3,6 @@ Description=NetBackup device configuration backup
 
 [Service]
 Type=oneshot
-WorkingDirectory=/path/to/atrisDev/netbackup
-ExecStart=/path/to/atrisDev/netbackup/scripts/run_backup.sh
+WorkingDirectory=/path/to/netbackup
+Environment=PYTHONPATH=src
+ExecStart=/path/to/netbackup/scripts/run_backup.sh

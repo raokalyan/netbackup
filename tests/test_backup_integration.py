@@ -5,7 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from netbackup.backup import _execute_backup, safe_name, write_backup
+from netbackup import backup as backup_module
+from netbackup.backup import BackupBusyError, _execute_backup, run_backup, safe_name, write_backup
 from netbackup.inventory import Device
 from netbackup.storage import latest_runs
 
@@ -60,3 +61,24 @@ def test_write_backup_uses_utc_date_directory(isolated_env):
     path = write_backup(device, "config", backup_root=isolated_env["backup_root"])
     assert path.parent.parent.name == "demo-router-01"
     assert len(path.parent.name.split("-")) == 3
+
+
+def test_run_backup_skip_if_busy_raises_when_lock_held(isolated_env, tmp_path: Path):
+    inventory = tmp_path / "devices.demo.yml"
+    inventory.write_text(
+        """
+devices:
+  - name: demo-router-01
+    host: 127.0.0.1
+    vendor: dummy
+    method: dummy
+""",
+        encoding="utf-8",
+    )
+
+    assert backup_module._backup_lock.acquire(blocking=False)
+    try:
+        with pytest.raises(BackupBusyError):
+            run_backup(str(inventory), skip_if_busy=True)
+    finally:
+        backup_module._backup_lock.release()

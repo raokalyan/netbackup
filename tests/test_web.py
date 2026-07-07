@@ -85,3 +85,16 @@ def test_backup_now_starts_background_job(client, monkeypatch: pytest.MonkeyPatc
 
     job = test_client.get("/api/job").json()
     assert job["status"] in {"completed", "running", "failed"}
+
+
+def test_index_shows_localized_timestamp(client, monkeypatch: pytest.MonkeyPatch):
+    test_client, _backup_root = client
+    monkeypatch.setattr(
+        "netbackup.web.format_display_timestamp",
+        lambda value: "LOCAL-TIME" if value else "",
+    )
+    record_run("device-a", "1.1.1.1", "dummy", "success", None, "ok")
+
+    response = test_client.get("/")
+    assert response.status_code == 200
+    assert "LOCAL-TIME" in response.text
