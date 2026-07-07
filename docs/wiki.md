@@ -59,6 +59,7 @@ Stores documentation intended for users and maintainers. This wiki file lives at
 Operational helper scripts.
 
 - `run_backup.sh`: runs the backup process (loads `.env`, uses `--skip-if-busy` for cron).
+- `check_cron.sh`: validates cron prerequisites and prints the active crontab entry.
 - `cron.example`: sample cron schedule. The active example runs every 5 minutes for testing.
 
 ### systemd/

@@ -165,6 +165,35 @@ Cron schedule times use the **server's local timezone**. Check `logs/cron.log` a
 
 Switch back to nightly production by commenting out the `*/5` line and enabling `30 1 * * *` in `scripts/cron.example`.
 
+### Troubleshooting cron
+
+If `logs/cron.log` never appears, cron usually is not reaching the script. Common causes:
+
+1. **Placeholder path still in crontab** — `/path/to/netbackup` must be replaced with the real install path.
+2. **Missing `logs/` directory** — cron cannot create the log file if the directory does not exist. Use the `mkdir -p ... &&` prefix from `scripts/cron.example`.
+3. **Script not executable** — run `chmod +x scripts/run_backup.sh scripts/check_cron.sh`.
+4. **Windows line endings** — if the repo was edited on Windows, run `sed -i 's/\r$//' scripts/run_backup.sh` on the server.
+5. **Wrong user crontab** — install the crontab for the same Linux user that owns the netbackup checkout.
+
+Run the diagnostic helper on the server:
+
+```bash
+cd /path/to/netbackup
+git pull
+chmod +x scripts/run_backup.sh scripts/check_cron.sh
+./scripts/check_cron.sh
+./scripts/run_backup.sh
+tail -f logs/cron.log
+```
+
+Also inspect system cron logs:
+
+```bash
+grep CRON /var/log/syslog | tail
+# or
+journalctl -u cron --since today
+```
+
 ### systemd (testing every 5 minutes)
 
 ```bash

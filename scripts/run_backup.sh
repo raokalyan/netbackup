@@ -3,18 +3,41 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+mkdir -p "$ROOT/logs"
+
+log() {
+  printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S %Z')" "$*"
+}
+
+log "run_backup.sh starting (root=$ROOT)"
 
 if [ -f .env ]; then
   set -a
   # shellcheck disable=SC1091
   source .env
   set +a
+  log "loaded .env"
+else
+  log "warning: .env not found at $ROOT/.env"
 fi
 
+PYTHON=""
 if [ -d .venv ]; then
   # shellcheck disable=SC1091
   source .venv/bin/activate
+  PYTHON="$(command -v python || true)"
+  log "activated .venv (python=${PYTHON:-missing})"
+fi
+
+if [ -z "$PYTHON" ]; then
+  PYTHON="$(command -v python3 || command -v python || true)"
+fi
+
+if [ -z "$PYTHON" ]; then
+  log "error: python3/python not found in PATH=$PATH"
+  exit 127
 fi
 
 export PYTHONPATH="$ROOT/src"
-exec python -m netbackup.backup --inventory config/devices.yml --skip-if-busy
+log "running backup via $PYTHON"
+exec "$PYTHON" -m netbackup.backup --inventory config/devices.yml --skip-if-busy
