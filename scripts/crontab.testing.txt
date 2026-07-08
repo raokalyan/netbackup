@@ -1,0 +1,5 @@
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# NetBackup testing: every 5 minutes
+*/5 * * * * mkdir -p /your/real/path/netbackup/logs && /your/real/path/netbackup/scripts/run_backup.sh >> /your/real/path/netbackup/logs/cron.log 2>&1
