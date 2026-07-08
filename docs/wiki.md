@@ -116,7 +116,7 @@ Automated tests for project behavior. Current tests focus on inventory loading. 
 PYTHONPATH=src python3 -m netbackup.backup --inventory config/devices.yml
 
 # Start the internal web UI
-PYTHONPATH=src uvicorn netbackup.web:app --host 127.0.0.1 --port 8000
+PYTHONPATH=src uvicorn netbackup.web:app --host 0.0.0.0 --port 8000
 
 # Run tests
 PYTHONPATH=src python3 -m pytest

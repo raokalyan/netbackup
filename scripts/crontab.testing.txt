@@ -5,10 +5,11 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 */5 * * * * mkdir -p /your/real/path/netbackup/logs && /your/real/path/netbackup/scripts/run_backup.sh >> /your/real/path/netbackup/logs/cron.log 2>&1
 
 # --- Web UI startup (run manually as ladmin) ---
+# Listens on all network interfaces. Set NETBACKUP_WEB_USERNAME/PASSWORD in .env first.
 # cd /your/real/path/netbackup
 # source .venv/bin/activate
 # export PYTHONPATH=/your/real/path/netbackup/src
-# uvicorn netbackup.web:app --host 127.0.0.1 --port 8000
+# uvicorn netbackup.web:app --host 0.0.0.0 --port 8000
 #
 # Optional: run in background and log output
-# nohup uvicorn netbackup.web:app --host 127.0.0.1 --port 8000 >> /your/real/path/netbackup/logs/webui.log 2>&1 &
+# nohup uvicorn netbackup.web:app --host 0.0.0.0 --port 8000 >> /your/real/path/netbackup/logs/webui.log 2>&1 &
