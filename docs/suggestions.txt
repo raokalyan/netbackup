@@ -1,0 +1,229 @@
+NetBackup — Suggestions and Setup Guide
+=========================================
+Generated from project review and follow-up discussion.
+
+
+1. INITIAL REVIEW RECOMMENDATIONS (IMPLEMENTED)
+-----------------------------------------------
+
+The following improvements were added in v0.2.0:
+
+  a. Logging
+     - Runtime logs go to logs/netbackup.log (override: NETBACKUP_LOG_FILE)
+     - Backup successes, failures, retention cleanup, and web events are logged
+
+  b. Web authentication
+     - Set NETBACKUP_WEB_USERNAME and NETBACKUP_WEB_PASSWORD in .env
+     - When both are set, all web routes require HTTP Basic auth
+     - Recommended before exposing the UI beyond localhost
+
+  c. SSH/CLI adapter
+     - Use method: ssh in config/devices.yml for Cisco, Juniper, Arista, etc.
+     - Requires netmiko (included in requirements.txt)
+     - Credentials use the same per-device env var convention as API keys
+
+  d. Background backups
+     - POST /backup-now starts a backup in the background (non-blocking)
+     - GET /api/job returns current job status
+     - Shared lock prevents overlapping runs (CLI + web UI)
+
+  e. 30-day retention
+     - Runs automatically after each backup
+     - Deletes backup files older than 30 days (by file mtime)
+     - Purges matching SQLite run history
+     - Override: NETBACKUP_RETENTION_DAYS=30
+
+  f. Integration tests
+     - Run: pip install -e ".[dev]" && pytest
+     - Covers dummy backup flow, web auth, path validation, retention, SSH adapter
+
+
+2. SECURITY SUGGESTIONS
+-------------------------
+
+  - Do not commit real passwords or API keys
+  - Store secrets in .env only; reference env var names in inventory YAML
+  - Set NETBACKUP_WEB_USERNAME and NETBACKUP_WEB_PASSWORD before exposing UI
+  - Bind the UI to localhost/VPN or put it behind authenticated Nginx
+  - verify_ssl defaults to true; examples use false for internal lab Panorama only
+  - PAN-OS API keys are sent as URL query params (standard for PAN-OS; may appear in proxy logs)
+
+
+3. SCALABLE SECRET ARCHITECTURE (PRESERVED)
+-------------------------------------------
+
+  Convention: <DEVICE_NAME>_<SECRET_TYPE> in uppercase
+  Non-alphanumeric characters in device name become underscores.
+
+  Examples:
+    panorama-01  -> PANORAMA_01_API_KEY
+    firewall-01  -> FIREWALL_01_API_KEY
+    switch-01    -> SWITCH_01_USERNAME, SWITCH_01_PASSWORD
+    switch-01    -> SWITCH_01_ENABLE_PASSWORD (optional, Cisco enable mode)
+
+  Lookup order (in code):
+    1. Explicit env var named in inventory (e.g. api_key_env: FIREWALL_01_API_KEY)
+    2. Auto-generated conventional env var from device name
+    3. Global fallback: NETBACKUP_DEFAULT_API_KEY, NETBACKUP_DEFAULT_USERNAME,
+       NETBACKUP_DEFAULT_PASSWORD
+
+  To scale to many devices:
+    - Add device entries to config/devices.yml (name, host, vendor, method only)
+    - Add matching secrets to .env using the naming convention
+    - No code changes required per device
+
+
+4. WHERE TO SET WHAT
+--------------------
+
+  Panorama / device host address:
+    File:   config/devices.yml
+    Field:  host
+    Example:
+      devices:
+        - name: panorama-01
+          host: panorama.example.internal   # IP or FQDN
+          vendor: panorama
+          method: api
+          verify_ssl: false
+
+  API keys, SSH passwords, web auth:
+    File:   .env  (never committed; copy from .env.example)
+    Example:
+      PANORAMA_01_API_KEY=your-key-here
+      FIREWALL_01_API_KEY=your-key-here
+      SWITCH_01_USERNAME=admin
+      SWITCH_01_PASSWORD=your-password-here
+      NETBACKUP_WEB_USERNAME=admin
+      NETBACKUP_WEB_PASSWORD=your-secure-password
+
+  Paths and retention:
+    File:   .env
+    Example:
+      NETBACKUP_DB=netbackup.db
+      NETBACKUP_BACKUP_DIR=backups
+      NETBACKUP_LOG_FILE=logs/netbackup.log
+      NETBACKUP_RETENTION_DAYS=30
+
+
+5. LOCAL SETUP (IF FILES ARE MISSING)
+-------------------------------------
+
+  .env and config/devices.yml are gitignored and live only on your machine.
+  Git commits never include them. If they are missing, recreate from examples:
+
+    cp .env.example .env
+    cp config/devices.example.yml config/devices.yml
+
+  Then edit both files with your real values:
+    - config/devices.yml  -> real host addresses, device names
+    - .env                -> real API keys, passwords, web auth
+
+  Quick start:
+
+    cd netbackup
+    python3 -m venv .venv
+    source .venv/bin/activate          # Windows: .venv\Scripts\activate
+    pip install -r requirements.txt
+    cp .env.example .env               # if needed
+    cp config/devices.example.yml config/devices.yml   # if needed
+    # Edit .env and config/devices.yml with your values
+
+    PYTHONPATH=src python -m netbackup.backup --inventory config/devices.yml
+    PYTHONPATH=src uvicorn netbackup.web:app --host 127.0.0.1 --port 8000
+
+  Demo without real devices:
+
+    PYTHONPATH=src python -m netbackup.backup --inventory config/devices.demo.yml
+
+
+6. PANORAMA / PAN-OS BACKUP OPTIONS
+-----------------------------------
+
+  Restore-loadable XML (default when commands is unset):
+    vendor: panorama
+    method: api
+    # No commands list -> export API: type=export&category=configuration
+    # Saves as .xml
+
+  Explicit restore export:
+    commands:
+      - export-config
+
+  Human-readable audit bundle (not restore file):
+    commands:
+      - system-info
+      - panorama-status
+      - connected-devices
+      - managed-devices
+      - device-groups
+      - templates
+      - template-stacks
+      - plugins
+
+  Custom PAN-OS API commands:
+    commands:
+      - name: commit-jobs
+        type: op
+        cmd: "<show><jobs><all></all></jobs></show>"
+      - name: shared-addresses
+        type: config
+        action: show
+        xpath: "/config/shared/address"
+
+  Note: Some Panorama xpath aliases assume device entry name
+  'localhost.localdomain'. Override with custom commands if your Panorama
+  uses a different entry name.
+
+
+7. SSH / CLI BACKUP EXAMPLE
+---------------------------
+
+  devices:
+    - name: switch-01
+      host: 192.0.2.20
+      vendor: cisco
+      method: ssh
+      device_type: cisco_ios
+      commands:
+        - show running-config
+
+  Vendor defaults (when device_type/commands omitted):
+    cisco / cisco_ios -> cisco_ios, show running-config
+    cisco_nxos        -> show running-config
+    juniper / junos   -> show configuration | display set
+    arista            -> show running-config
+
+
+8. WEB UI ROUTES
+----------------
+
+  /              Dashboard (latest runs, job status)
+  /wiki          Internal wiki
+  /api/runs      Recent backup runs (JSON)
+  /api/job       Current background backup job status (JSON)
+  POST /backup-now   Start background backup
+  /runs/{id}/config   View or download saved config
+
+
+9. PRODUCTION DEPLOYMENT SUGGESTIONS
+------------------------------------
+
+  - Use systemd timer or cron for scheduled backups (see systemd/ and scripts/)
+  - Prefer systemd over cron for better status via systemctl/journalctl
+  - Run backups via CLI/cron; use web UI for monitoring, not as sole scheduler
+  - Enable web auth before any non-localhost exposure
+  - Keep config/devices.yml and .env on the server only; back them up separately
+  - Monitor logs/netbackup.log for failed backups and auth issues
+
+
+10. FUTURE IMPROVEMENTS (NOT YET IMPLEMENTED)
+---------------------------------------------
+
+  From the original review, these were noted as possible next steps:
+
+  - Retry logic for transient network failures
+  - DB indexes on backup_runs.created_at and device_name
+  - Config deduplication (skip write if unchanged)
+  - Panorama xpath aliases that don't hardcode localhost.localdomain
+  - More vendor adapters (Fortinet, etc.)

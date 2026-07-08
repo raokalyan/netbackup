@@ -1,0 +1,17 @@
+[Unit]
+Description=NetBackup web dashboard
+After=network.target
+
+[Service]
+Type=simple
+User=netbackup
+Group=netbackup
+WorkingDirectory=/path/to/netbackup
+Environment=PYTHONPATH=src
+EnvironmentFile=-/path/to/netbackup/.env
+ExecStart=/path/to/netbackup/scripts/run_web.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

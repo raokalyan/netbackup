@@ -22,9 +22,11 @@ pip install -r requirements.txt
 cp .env.example .env
 cp config/devices.example.yml config/devices.yml
 PYTHONPATH=src python -m netbackup.backup --inventory config/devices.yml
-PYTHONPATH=src uvicorn netbackup.web:app --host 0.0.0.0 --port 8000
+./scripts/run_web.sh
+# Or manually:
+# PYTHONPATH=src uvicorn netbackup.web:app --host 0.0.0.0 --port 8000
 # Optional: override the web UI inventory path
-# NETBACKUP_INVENTORY=config/devices.yml PYTHONPATH=src uvicorn netbackup.web:app --host 0.0.0.0 --port 8000
+# NETBACKUP_INVENTORY=config/devices.yml ./scripts/run_web.sh
 ```
 
 ## Local dummy demo
@@ -209,9 +211,46 @@ systemctl list-timers | grep netbackup
 
 Backup run times are stored in UTC. The web UI converts them using `NETBACKUP_TIMEZONE` from `.env` (for example `America/Los_Angeles`). Backup filenames under `backups/` continue to use UTC so retention stays consistent across servers.
 
+## Web UI (network access)
+
+By default the web UI binds to all interfaces (`0.0.0.0:8000`) so other hosts on your network can reach it. Configure in `.env`:
+
+```bash
+NETBACKUP_WEB_HOST=0.0.0.0
+NETBACKUP_WEB_PORT=8000
+NETBACKUP_WEB_USERNAME=admin
+NETBACKUP_WEB_PASSWORD=your-secure-password
+```
+
+Start the dashboard:
+
+```bash
+chmod +x scripts/run_web.sh
+./scripts/run_web.sh
+```
+
+Open from another machine: `http://SERVER_IP:8000`
+
+For localhost-only access, set `NETBACKUP_WEB_HOST=127.0.0.1`.
+
+On Ubuntu, allow the port through the firewall if needed:
+
+```bash
+sudo ufw allow 8000/tcp
+```
+
+Optional systemd service:
+
+```bash
+sudo cp systemd/netbackup-web.service /etc/systemd/system/
+# Edit User, WorkingDirectory, EnvironmentFile, and ExecStart paths
+sudo systemctl daemon-reload
+sudo systemctl enable --now netbackup-web
+```
+
 ## Web UI authentication
 
-When both `NETBACKUP_WEB_USERNAME` and `NETBACKUP_WEB_PASSWORD` are set, all web routes require HTTP Basic authentication.
+When both `NETBACKUP_WEB_USERNAME` and `NETBACKUP_WEB_PASSWORD` are set, all web routes require HTTP Basic authentication. **Set these before exposing the UI on the network.**
 
 - `/` shows the latest backup runs and job status.
 - `/wiki` shows the internal NetBackup wiki and project directory guide.

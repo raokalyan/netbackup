@@ -22,6 +22,8 @@ LOG_FILE = Path(os.getenv("NETBACKUP_LOG_FILE", BASE_DIR / "logs" / "netbackup.l
 RETENTION_DAYS = int(os.getenv("NETBACKUP_RETENTION_DAYS", "30"))
 DISPLAY_TIMEZONE = _resolve_display_timezone()
 
+WEB_HOST = os.getenv("NETBACKUP_WEB_HOST", "0.0.0.0")
+WEB_PORT = int(os.getenv("NETBACKUP_WEB_PORT", "8000"))
 WEB_USERNAME = os.getenv("NETBACKUP_WEB_USERNAME")
 WEB_PASSWORD = os.getenv("NETBACKUP_WEB_PASSWORD")
 WEB_AUTH_ENABLED = bool(WEB_USERNAME and WEB_PASSWORD)

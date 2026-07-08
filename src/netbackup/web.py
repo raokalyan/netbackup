@@ -12,7 +12,14 @@ from .auth import require_web_auth
 from .jobs import get_job_state, start_backup_job
 from .logging_setup import setup_logging
 from .paths import resolve_backup_file
-from .settings import BACKUP_DIR, DISPLAY_TIMEZONE, RETENTION_DAYS, WEB_AUTH_ENABLED
+from .settings import (
+    BACKUP_DIR,
+    DISPLAY_TIMEZONE,
+    RETENTION_DAYS,
+    WEB_AUTH_ENABLED,
+    WEB_HOST,
+    WEB_PORT,
+)
 from .storage import get_run, latest_runs
 from .timefmt import format_display_timestamp
 
@@ -28,8 +35,17 @@ app = FastAPI(title="NetBackup", version="0.2.0")
 
 @app.on_event("startup")
 def on_startup() -> None:
+    network_bind = WEB_HOST in {"0.0.0.0", "::"}
+    logger.info("Web UI configured for %s:%s", WEB_HOST, WEB_PORT)
     if WEB_AUTH_ENABLED:
         logger.info("Web UI authentication enabled")
+    elif network_bind:
+        logger.warning(
+            "Web UI is exposed on all network interfaces (%s:%s) without authentication. "
+            "Set NETBACKUP_WEB_USERNAME and NETBACKUP_WEB_PASSWORD in .env.",
+            WEB_HOST,
+            WEB_PORT,
+        )
     else:
         logger.warning(
             "Web UI authentication is disabled. Set NETBACKUP_WEB_USERNAME and "

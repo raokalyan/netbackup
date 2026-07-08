@@ -1,0 +1,23 @@
+# NetBackup — test backup every 5 minutes
+#
+# Edit NETBACKUP_ROOT to your install path, then install:
+#   crontab scripts/crontab.5min
+#
+# Verify:
+#   crontab -l
+#   tail -f logs/netbackup.log
+#
+# Remove this test schedule when done:
+#   crontab -r
+#   # or restore production schedule from scripts/cron.example
+#
+# Requires:
+#   chmod +x scripts/run_backup.sh
+#   config/devices.yml and .env present under NETBACKUP_ROOT
+
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+NETBACKUP_ROOT=/path/to/netbackup
+
+*/5 * * * * ${NETBACKUP_ROOT}/scripts/run_backup.sh >> ${NETBACKUP_ROOT}/logs/netbackup.log 2>&1
