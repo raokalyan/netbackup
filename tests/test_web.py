@@ -52,7 +52,7 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
 
 def _csrf_field() -> dict[str, str]:
-    return {"csrf_token": generate_csrf_token()}
+    return {"csrf_token": generate_csrf_token(), "confirm_write": "yes"}
 
 
 def test_view_config_serves_file_inside_backup_root(client):
@@ -197,6 +197,59 @@ def test_edit_config_page_renders_textarea(client):
     assert response.status_code == 200
     assert 'name="content"' in response.text
     assert 'name="csrf_token"' in response.text
+    assert 'name="confirm_write"' in response.text
+    assert "Disk write warning" in response.text
+
+
+def test_save_config_requires_confirm_write(client):
+    test_client, _backup_root, inventory_path, _log_path = client
+    original = inventory_path.read_text(encoding="utf-8")
+
+    response = test_client.post(
+        "/config",
+        data={"content": original, **_csrf_field(), "confirm_write": ""},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert "confirm the disk write" in response.headers["location"]
+    assert inventory_path.read_text(encoding="utf-8") == original
+
+
+def test_startup_warns_when_production_inventory_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture):
+    example_path = tmp_path / "config" / "devices.example.yml"
+    example_path.parent.mkdir(parents=True)
+    example_path.write_text("devices: []\n", encoding="utf-8")
+    production_path = tmp_path / "config" / "devices.yml"
+
+    monkeypatch.setattr("netbackup.web.BASE_DIR", tmp_path)
+    monkeypatch.setattr("netbackup.web.DEFAULT_INVENTORY_PATH", production_path)
+    monkeypatch.setattr("netbackup.web.EXAMPLE_INVENTORY_PATH", example_path)
+    monkeypatch.delenv("NETBACKUP_INVENTORY", raising=False)
+
+    from netbackup.web import _warn_inventory_on_startup
+
+    with caplog.at_level("WARNING"):
+        _warn_inventory_on_startup()
+
+    assert "Production inventory file not found" in caplog.text
+    assert str(production_path) in caplog.text
+
+
+def test_index_shows_inventory_warning_when_using_example_fallback(client, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    test_client, _backup_root, inventory_path, _log_path = client
+    example_path = tmp_path / "config" / "devices.example.yml"
+    example_path.parent.mkdir(parents=True, exist_ok=True)
+    example_path.write_text("devices: []\n", encoding="utf-8")
+    inventory_path.unlink()
+
+    monkeypatch.setattr("netbackup.web.BASE_DIR", tmp_path)
+    monkeypatch.setattr("netbackup.web.DEFAULT_INVENTORY_PATH", inventory_path)
+    monkeypatch.setattr("netbackup.web.EXAMPLE_INVENTORY_PATH", example_path)
+
+    response = test_client.get("/")
+    assert response.status_code == 200
+    assert "Inventory warning" in response.text
+    assert "Git pull will not overwrite local config" in response.text
 
 
 def test_save_config_updates_inventory(client):

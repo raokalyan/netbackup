@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+from dataclasses import dataclass
 from html import escape
 from pathlib import Path
 from urllib.parse import quote
@@ -49,6 +50,7 @@ app.add_middleware(SecurityHeadersMiddleware)
 def on_startup() -> None:
     network_bind = WEB_HOST in {"0.0.0.0", "::"}
     logger.info("Web UI configured for %s:%s", WEB_HOST, WEB_PORT)
+    _warn_inventory_on_startup()
     if WEB_AUTH_ENABLED:
         logger.info("Web UI authentication enabled")
     elif network_bind:
@@ -66,12 +68,100 @@ def on_startup() -> None:
 
 
 def _inventory_path() -> Path:
+    return _inventory_status().active_path
+
+
+@dataclass(frozen=True)
+class InventoryStatus:
+    active_path: Path
+    production_path: Path
+    production_exists: bool
+    using_example_fallback: bool
+
+
+def _inventory_status() -> InventoryStatus:
     configured = os.getenv("NETBACKUP_INVENTORY")
-    if configured:
-        return Path(configured).expanduser()
-    if DEFAULT_INVENTORY_PATH.exists():
-        return DEFAULT_INVENTORY_PATH
-    return EXAMPLE_INVENTORY_PATH
+    production_path = Path(configured).expanduser() if configured else DEFAULT_INVENTORY_PATH
+    if production_path.is_file():
+        return InventoryStatus(
+            active_path=production_path,
+            production_path=production_path,
+            production_exists=True,
+            using_example_fallback=False,
+        )
+    if not configured and EXAMPLE_INVENTORY_PATH.is_file():
+        return InventoryStatus(
+            active_path=EXAMPLE_INVENTORY_PATH,
+            production_path=DEFAULT_INVENTORY_PATH,
+            production_exists=False,
+            using_example_fallback=True,
+        )
+    return InventoryStatus(
+        active_path=production_path,
+        production_path=production_path,
+        production_exists=False,
+        using_example_fallback=False,
+    )
+
+
+def _warn_inventory_on_startup() -> None:
+    status = _inventory_status()
+    if status.production_exists:
+        logger.info("Using inventory file: %s", status.active_path)
+        return
+
+    if status.using_example_fallback:
+        logger.warning(
+            "Production inventory file not found: %s. "
+            "The web UI and backups are using the example inventory at %s until "
+            "config/devices.yml is created. Git updates will not restore this file.",
+            status.production_path,
+            status.active_path,
+        )
+        return
+
+    logger.warning(
+        "Inventory file not found: %s. "
+        "Create config/devices.yml before running backups. "
+        "Git updates will not restore local device config or API keys.",
+        status.production_path,
+    )
+
+
+def _inventory_warning_banner() -> str:
+    status = _inventory_status()
+    if status.production_exists:
+        return ""
+
+    if status.using_example_fallback:
+        message = (
+            f"Production inventory not found at {status.production_path}. "
+            f"Currently using the example file at {status.active_path}. "
+            "Create config/devices.yml with your real devices before running backups. "
+            "Git pull will not overwrite local config or .env secrets."
+        )
+    else:
+        message = (
+            f"Inventory file not found at {status.production_path}. "
+            "Create config/devices.yml before running backups. "
+            "Git pull will not overwrite local config or .env secrets."
+        )
+    return f'<div class="warning-box"><strong>Inventory warning</strong><p>{escape(message)}</p></div>'
+
+
+def _disk_write_warning_html(inventory_path: Path) -> str:
+    backup_path = inventory_path.with_suffix(inventory_path.suffix + ".bak")
+    return f"""
+      <div class="warning-box">
+        <strong>Disk write warning</strong>
+        <p>
+          Saving will overwrite <code>{escape(str(inventory_path))}</code> on the server.
+          A backup copy will be written to <code>{escape(str(backup_path))}</code>.
+          Keep API keys in <code>.env</code> and reference env var names in YAML.
+          Do not paste secrets here unless you intend to store them on disk.
+        </p>
+      </div>
+    """
 
 
 def _safe_inventory_display(path: Path) -> str:
@@ -185,6 +275,29 @@ def _shared_styles() -> str:
           color: #991b1b;
           border-color: #fca5a5;
         }
+        .warning-box {
+          margin-top: 16px;
+          background: #fff7ed;
+          color: #9a3412;
+          border: 1px solid #fdba74;
+          border-radius: 12px;
+          padding: 14px 16px;
+        }
+        .warning-box strong { display: block; margin-bottom: 6px; }
+        .warning-box p { margin: 0; font-size: 14px; }
+        .confirm-write {
+          display: flex;
+          gap: 10px;
+          align-items: flex-start;
+          margin-top: 14px;
+          padding: 12px 14px;
+          border-radius: 12px;
+          background: #fff7ed;
+          border: 1px solid #fdba74;
+          color: #9a3412;
+          font-size: 14px;
+        }
+        .confirm-write input { margin-top: 3px; }
         .job-status {
           margin-top: 18px;
           background: #dbeafe;
@@ -365,6 +478,7 @@ def index(message: str | None = None, error: str | None = None) -> HTMLResponse:
           {auth_note}
         </div>
       </section>
+      {_inventory_warning_banner()}
       {_banner(message)}
       {_banner(error, error=True)}
       {_job_status_html()}
@@ -441,11 +555,18 @@ def edit_inventory_config(message: str | None = None, error: str | None = None) 
       <section class="card">
         <h2>Edit device inventory</h2>
         <p class="muted-note">Changes are validated before being saved to <code>{escape(str(inventory_path))}</code>.</p>
+        {_disk_write_warning_html(inventory_path)}
         {_banner(message)}
         {_banner(error, error=True)}
         <form action="/config" method="post">
           <input type="hidden" name="csrf_token" value="{escape(csrf_token)}">
           <textarea class="editor" name="content" spellcheck="false">{content}</textarea>
+          <label class="confirm-write">
+            <input type="checkbox" name="confirm_write" value="yes" required>
+            <span>
+              I understand this will overwrite the inventory file on disk and may affect scheduled backups.
+            </span>
+          </label>
           <div class="toolbar" style="margin-top:14px;">
             <button class="btn" type="submit">Save config</button>
             <a class="btn-secondary" href="/config">Cancel</a>
@@ -461,12 +582,27 @@ def save_inventory_config(
     request: Request,
     csrf_token: str = Form(...),
     content: str = Form(...),
+    confirm_write: str = Form(default=""),
 ) -> RedirectResponse:
     validate_csrf_token(csrf_token)
     enforce_rate_limit(request, scope="save-config", max_requests=10, window_seconds=60)
     validate_config_content(content)
 
+    if confirm_write != "yes":
+        return RedirectResponse(
+            f"/config/edit?error={quote('You must confirm the disk write before saving.')}",
+            status_code=303,
+        )
+
     inventory_path = _resolved_inventory()
+    backup_path = inventory_path.with_suffix(inventory_path.suffix + ".bak")
+    client_host = request.client.host if request.client else "unknown"
+    logger.warning(
+        "Inventory config disk write approved from web UI: target=%s backup=%s client=%s",
+        inventory_path,
+        backup_path,
+        client_host,
+    )
     temp_path: Path | None = None
     try:
         with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False, dir=inventory_path.parent) as handle:
@@ -486,13 +622,14 @@ def save_inventory_config(
             status_code=303,
         )
 
-    backup_path = inventory_path.with_suffix(inventory_path.suffix + ".bak")
     try:
         if inventory_path.exists():
             backup_path.write_text(inventory_path.read_text(encoding="utf-8"), encoding="utf-8")
+            logger.warning("Inventory config backup written: %s", backup_path)
         if temp_path is None:
             raise HTTPException(status_code=500, detail="Failed to save config")
         temp_path.replace(inventory_path)
+        logger.warning("Inventory config written to disk: %s", inventory_path)
     except OSError as exc:
         if temp_path:
             temp_path.unlink(missing_ok=True)
